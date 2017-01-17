@@ -1,6 +1,7 @@
 import json
 import os
 import random
+import numpy as np
 
 class parentDoc:
 
@@ -54,7 +55,7 @@ class parentDoc:
 			childNames += "\t"
 		self.m_jsonHashMap.setdefault("child", childNames)
 
-	def transformParentTxt2Question(self, childObj):
+	def transformParentTxt2Question(self, childObj, iterationIndex, thresholdNum):
 		message = """<h1 align="center">Rate the relevance of sentence to the comment</h1>
 		      <h2>Instructions</h2>
 		      <ul>
@@ -73,7 +74,7 @@ class parentDoc:
       		for sentenceIndex in range(len(self.m_sentenceList)):
       			sentenceMap = self.m_sentenceList[sentenceIndex]
 
-      			if sentenceIndex in childObj.m_sentenceList:
+      			if sentenceIndex in childObj.m_sentenceList[iterationIndex*thresholdNum:(iterationIndex+1)*thresholdNum]:
 				message += """<b><font color="green">["""+str(sentenceIndex)+"""] </font></b><font color="green" size="2.5" face="times">"""+sentenceMap["sentence"]+"""</font><br />"""
 			else:
 				message += """<font color="blue">["""+str(sentenceIndex)+"""] </font><font size="2.5" face="times">"""+sentenceMap["sentence"]+"""</font><br />"""
@@ -81,17 +82,20 @@ class parentDoc:
 
       		message +="<hr />"
 
-      		message += """<h3><font color="red">Step 2: please read the comment</font></h3>"""
+      		message += """<h3><font color="red">Step 2: please read this user comment about the above news article</font></h3>"""
 	    	message += "<h2>Comments:</h2>"
 	    	message += """<p><font size="2.5" face="times">"""
 	    	message += childObj.m_content
 				# childObj = self.m_childMap[childName]
 	    	message += """</font></p>"""
 
+	    	message += """<hr />
+	    	<h3><font color="red">Step 3: please answer the following questions regarding the article, the selected sentences and the comment</font></h3>"""
+
       		return message
 
 	def transformChildTxt2Question(self, childObj):
-	    	message = """<h3><font color="red">Step 2: please read the comment</font></h3>"""
+	    	message = """<h3><font color="red">Step 2: please read this user comment about the above news article</font></h3>"""
 	    	message += "<h2>Comments:</h2>"
 	    	message += """<p><font size="2.5" face="times">"""
 	    	message += childObj.m_content
@@ -310,7 +314,14 @@ class corpus:
 			###add tranformation for child
 	
 	def transformQuestionText(self, childName, sentenceIndex, stepIndex):
-		message = """<h3><font color="red">Step """+str(stepIndex)+""": please provide the relevance score of the comment with respect to each selected line</font></h3> Relevance to the<b><font color="green"> line"""+str(sentenceIndex)+"""</font></b>"""
+		message = """Question """+str(stepIndex-2)+""": please judge the relevance quality of this comment to <b><font color="green"> line """+str(sentenceIndex)+""" </font></b>in the article"""
+		return message
+
+
+	def generateSanityQuestion(self, childObj, sanityCheckQuestionIndex, iterationIndex, thresholdNum, stepIndex):
+		sentenceIndex1 = childObj.m_sentenceList[iterationIndex*thresholdNum]
+		sentenceIndex2 = childObj.m_sentenceList[iterationIndex*thresholdNum+1]
+		message = """Question """+str(stepIndex-2)+""": please compare the relative relevance of the comment between<b><font color="green"> line """+ str(sentenceIndex1)+ """</font></b> and <b><font color="green"> line """+ str(sentenceIndex2)+"""</font></b>"""
 		return message
 
 	def writeQuestion(self, outputQuestionDir, selectedParentNum, selectedCommentNum, thresholdNum):
@@ -322,6 +333,7 @@ class corpus:
 		questionNum = 0
 		pageNum = 0
 		articleNum = 0
+		sanityCheckQuestionNum = 0  ##this should be the same as pageNum
 		for parentIndex in randomParentIndexList:
 		
 			obj = self.m_parentObjectCollection[parentIndex]
@@ -339,6 +351,12 @@ class corpus:
 
 				iterationNum = len(childObj.m_sentenceList)/thresholdNum
 				for iterationIndex in range(iterationNum+1):
+					sanityCheckQuestionIndex = (iterationIndex)*thresholdNum+2
+					randomBound = np.min([(iterationIndex+1)*thresholdNum, len(childObj.m_sentenceList)])
+					
+					if (iterationIndex)*thresholdNum+2 < randomBound:
+						sanityCheckQuestionIndex = random.randint((iterationIndex)*thresholdNum+2, randomBound)
+				
 					stepIndex = 3
 					pageNum += 1
 					questionFileName = obj.m_name+"_"+str(childIndex)
@@ -347,6 +365,7 @@ class corpus:
 				
 					outputQuestionFile = os.path.join(outputQuestionDir,"%s.question"%questionFileName)
 					f = open(outputQuestionFile, "w")
+					print "outputQuestionFile\t", outputQuestionFile
 					f.write("""<?xml version="1.0" encoding="UTF-8"?>""")
 					f.write("\n")
 					f.write("""<QuestionForm xmlns="http://mechanicalturk.amazonaws.com/AWSMechanicalTurkDataSchemas/2005-10-01/QuestionForm.xsd">""")
@@ -354,67 +373,124 @@ class corpus:
 					f.write("""<Overview>""")
 					f.write("\n")
 					f.write("""<FormattedContent><![CDATA[""")
-					articleAndComment = obj.transformParentTxt2Question(childObj)
+					articleAndComment = obj.transformParentTxt2Question(childObj, iterationIndex, thresholdNum)
 					f.write(articleAndComment)
 					f.write("""]]></FormattedContent>""")
 					f.write("""</Overview>""")
 
-					for sentenceIndex in childObj.m_sentenceList[iterationIndex*thresholdNum:(iterationIndex+1)*thresholdNum]:
-						questionID = childName+"_"+str(sentenceIndex)
-						print questionID
+					for stnIndexInList in range(iterationIndex*thresholdNum, (iterationIndex+1)*thresholdNum+1):
+						if stnIndexInList > len(childObj.m_sentenceList):
+							break;
 
-						questionNum += 1
-						
-						f.write("""<Question>
-			  			<QuestionIdentifier>""")
-						f.write(questionID)
-						f.write("""</QuestionIdentifier>""")
-						f.write("""
-						<QuestionContent>
-			     <FormattedContent><![CDATA[""")
-						# questionDescription = obj.transformChildTxt2Question(childObj)
-						# f.write(questionDescription)
-		      # <h5><font color="red">**********please read the comment************</font></h5>
-		      # <h2>Comments:</h2>
-		      # <p>RUSSIA &amp; THE WEST LOOKS FOR A "SAVE SYRIA" DEAL IN DAMASCUS BUT PERHAPS THEY SHOULD LOOK TO LATAKIA.  This could be a great benefit for Alawites andrebels but not so good for militant jihadis on one side and hard-line war criminals on the other side since the goals of both depend on a prolonged war.The jihadi numbers and influence grows with each extra day this war lasts and with every bomb and shelling Assad launches.  That's not good for Alawites or moderate rebels.   The other beneficiaries are Assad, Maher and Malouf  who could have prevented this entire conflict by agreeing to demands for democracy and human rights when it all bega.  They've promoted the "Rebels are all Al Queda line" so they get to stay alive and free for a few days or months longer at the expense of everyone else.For details on Latakia developments see the today's Syria Live roundup at Enduring America. In this instance most of the good stuff has been provided by readers in subposts since the moderators have other duties today.   One regular poster has actually been in Darayaa recently and witnessed a major defection.   Today's defection of three top regime officials--described in another post--could encourage the deal as well as other defections.You'll also learn of interesting and ongoing military developments, which keep getting updated.   Thanks, Red TornadoesSyrians need to do whatever they need to in order to stay free of the Zionist-Wahabi-salafist-Al-Qaida death squads. We may be in the same situation here in the US with Israeli agents creating terrorist attacks like 9/11.</p>
-		      # <h5><font color="red">******Please provide the relevance score of the comment with respect to each selected line******</font></h5>
-						
-			      # <Text>Relevance to the line 3</Text>
-						questionText = self.transformQuestionText(childName, sentenceIndex, stepIndex)
-						stepIndex += 1
-						f.write(questionText)
-						f.write("""]]></FormattedContent>""")
-			    			f.write("""</QuestionContent>
-						    <AnswerSpecification>
-						      <SelectionAnswer>
-						        <MinSelectionCount>1</MinSelectionCount>
-						        <MaxSelectionCount>1</MaxSelectionCount>
-						        <StyleSuggestion>radiobutton</StyleSuggestion>
-						        <Selections>
-						          <Selection>
-						            <SelectionIdentifier>0</SelectionIdentifier>
-						            <Text>Bad</Text>
-						          </Selection>
-						          <Selection>
-						            <SelectionIdentifier>1</SelectionIdentifier>
-						            <Text>Fair</Text>
-						          </Selection>
-						           <Selection>
-						            <SelectionIdentifier>2</SelectionIdentifier>
-						            <Text>Good</Text>
-						          </Selection>
-						           <Selection>
-						            <SelectionIdentifier>3</SelectionIdentifier>
-						            <Text>Excellent</Text>
-						          </Selection>
-								      <Selection>
-						            <SelectionIdentifier>4</SelectionIdentifier>
-						            <Text>Perfect</Text>
-						          </Selection>
-						        </Selections>
-						      </SelectionAnswer>
-						    </AnswerSpecification>
-			  				</Question>""")
+						if stnIndexInList == len(childObj.m_sentenceList):
+							if stnIndexInList < sanityCheckQuestionIndex:
+								break;
+
+						if stnIndexInList == sanityCheckQuestionIndex:
+							questionID = childName + "_sanity_"+str(iterationIndex)
+							print questionID
+
+							questionNum += 1
+							sanityCheckQuestionNum += 1
+
+							f.write("""<Question>
+				  			<QuestionIdentifier>""")
+							f.write(questionID)
+							f.write("""</QuestionIdentifier>""")
+							f.write("""
+							<QuestionContent>
+				     <FormattedContent><![CDATA[""")
+							
+							questionText = self.generateSanityQuestion(childObj, sanityCheckQuestionIndex, iterationIndex, thresholdNum, stepIndex)
+							stepIndex += 1
+							f.write(questionText)
+							f.write("""]]></FormattedContent>""")
+				    			f.write("""</QuestionContent>
+							    <AnswerSpecification>
+							      <SelectionAnswer>
+							        <MinSelectionCount>1</MinSelectionCount>
+							        <MaxSelectionCount>1</MaxSelectionCount>
+							        <StyleSuggestion>radiobutton</StyleSuggestion>
+							        <Selections>""")
+				    			f.write(""" <Selection>
+							            <SelectionIdentifier>0</SelectionIdentifier>""")
+				    			f.write("""<FormattedContent><![CDATA[ comment is more relevant to line """)
+				    			f.write(str(childObj.m_sentenceList[iterationIndex*thresholdNum]))
+				    			print "sanity vs\t", str(childObj.m_sentenceList[iterationIndex*thresholdNum]), "\t", str(childObj.m_sentenceList[iterationIndex*thresholdNum+1])
+							f.write("""]]></FormattedContent> </Selection>""")
+							f.write(""" <Selection>
+							            <SelectionIdentifier>1</SelectionIdentifier>""")
+				    			f.write("""<FormattedContent><![CDATA[ comment is more relevant to line """)
+				    			f.write(str(childObj.m_sentenceList[iterationIndex*thresholdNum+1]))
+							f.write("""]]></FormattedContent> </Selection>""")
+							f.write(""" <Selection>
+							            <SelectionIdentifier>2</SelectionIdentifier>""")
+				    			f.write("""<FormattedContent><![CDATA[ comment has the same relevance to these two lines """)
+							f.write("""]]></FormattedContent> </Selection>""")
+							f.write(""" <Selection>
+							            <SelectionIdentifier>2</SelectionIdentifier>""")
+				    			f.write("""<FormattedContent><![CDATA[ comment is irrelevant to these two lines """)
+							f.write("""]]></FormattedContent> </Selection>""")
+							f.write("""</Selections>
+							      </SelectionAnswer>
+							    </AnswerSpecification>
+				  				</Question>""")
+
+						else:
+							print "stnIndexInList\t", stnIndexInList, "\t sanityCheckQuestionIndex\t", sanityCheckQuestionIndex, "len(m_sentenceList)\t", len(childObj.m_sentenceList)
+							if stnIndexInList > sanityCheckQuestionIndex:
+								stnIndexInList -= 1
+							sentenceIndex = childObj.m_sentenceList[stnIndexInList]
+
+					# for sentenceIndex in childObj.m_sentenceList[iterationIndex*thresholdNum:(iterationIndex+1)*thresholdNum]:
+							questionID = childName+"_"+str(sentenceIndex)
+							print questionID
+
+							questionNum += 1
+							
+							f.write("""<Question>
+				  			<QuestionIdentifier>""")
+							f.write(questionID)
+							f.write("""</QuestionIdentifier>""")
+							f.write("""
+							<QuestionContent>
+				     <FormattedContent><![CDATA[""")
+							
+							questionText = self.transformQuestionText(childName, sentenceIndex, stepIndex)
+							stepIndex += 1
+							f.write(questionText)
+							f.write("""]]></FormattedContent>""")
+				    			f.write("""</QuestionContent>
+							    <AnswerSpecification>
+							      <SelectionAnswer>
+							        <MinSelectionCount>1</MinSelectionCount>
+							        <MaxSelectionCount>1</MaxSelectionCount>
+							        <StyleSuggestion>radiobutton</StyleSuggestion>
+							        <Selections>
+							          <Selection>
+							            <SelectionIdentifier>0</SelectionIdentifier>
+							            <Text>Bad</Text>
+							          </Selection>
+							          <Selection>
+							            <SelectionIdentifier>1</SelectionIdentifier>
+							            <Text>Fair</Text>
+							          </Selection>
+							           <Selection>
+							            <SelectionIdentifier>2</SelectionIdentifier>
+							            <Text>Good</Text>
+							          </Selection>
+							           <Selection>
+							            <SelectionIdentifier>3</SelectionIdentifier>
+							            <Text>Excellent</Text>
+							          </Selection>
+									      <Selection>
+							            <SelectionIdentifier>4</SelectionIdentifier>
+							            <Text>Perfect</Text>
+							          </Selection>
+							        </Selections>
+							      </SelectionAnswer>
+							    </AnswerSpecification>
+				  				</Question>""")
 
 					f.write("""</QuestionForm>""")
 					f.close()
@@ -490,7 +566,8 @@ if __name__=="__main__":
 	YahooNewsCorpus.loadChildDirectory()
 
 	selectedParentNum = 5
-	selectedCommentNum  = 5
+	selectedCommentNum  = 15
+	selectedStnNum = 3
 	pageQuestionThresholdNum = 5
 	selectCommentFile = "./Data/mergedCommentFile.txt"
 	YahooNewsCorpus.loadSelectedComment(selectCommentFile)
