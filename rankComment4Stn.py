@@ -198,8 +198,10 @@ if __name__ == '__main__':
 	ldaFile = "topChild4Stn_LDA.txt"
 	corrLDAFile = "topChild4Stn_CorrLDA.txt"
 	corrDCMLDAFile = "topChild4Stn_CorrDCMLDA.txt"
-	CCTMFile = "topChild4Stn_CCTM.txt"
+	priorCorrLDAFile = "topChild4Stn_PriorCorrLDA.txt"
 	SCTMFile = "topChild4Stn_SCTM.txt"
+	CCTMFile = "topChild4Stn_CCTM.txt"
+
 
 	loadModel(ldaFile, corpusObj, 0)
 	modelList.append("lda")
@@ -210,11 +212,14 @@ if __name__ == '__main__':
 	addModel(corrDCMLDAFile, corpusObj, 2)
 	modelList.append("corrDCMLDA")
 
-	addModel(CCTMFile, corpusObj, 3)
-	modelList.append("CCTM")
+	addModel(corrDCMLDAFile, corpusObj, 3)
+	modelList.append("priorCorrLDA")
 
 	addModel(SCTMFile, corpusObj, 4)
 	modelList.append("SCTM")
+
+	addModel(CCTMFile, corpusObj, 5)
+	modelList.append("CCTM")
 
 	topK = 5
 

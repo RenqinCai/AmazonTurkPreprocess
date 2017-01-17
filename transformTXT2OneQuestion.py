@@ -54,11 +54,11 @@ class parentDoc:
 			childNames += "\t"
 		self.m_jsonHashMap.setdefault("child", childNames)
 
-	def transformParentTxt2Question(self, childObj, selectedStnIndex):
+	def transformParentTxt2Question(self, childObj):
 		message = """<h1 align="center">Rate the relevance of sentence to the comment</h1>
 		      <h2>Instructions</h2>
 		      <ul>
-		      <li>Please carefully read the article, espeically the colored lines. The first line in the article is its title, , and followed by the content of the article. The number at the front of each line is the index of each line (title is not indexed). </li>
+		      <li>Please carefully read the article, espeically the colored lines. The first line in the article is its title, and followed by the content of the article. The number at the front of each line is the index of each line (title is not indexed). </li>
 		      <li>Please read the selected comment on this article.</li> 
 		      <li>Please answer the prepared questions. Under the comment, we have selected a set of lines (include at least one sentence) from the article. Please carefully judge the relevance quality of each selected line to the comment. A selected line is considered to be relevant to the comment if the comment is talking about the same or related topic of the textual content in that line. We further categorize the relevance quality into five levels: <strong>Bad</strong> - totally irrelevant; <strong>Fair</strong> - not quite relevant; <strong>Good</strong> - somehow relevant; <strong>Excellent</strong> - relevant; <strong>Perfect</strong> - exact match. If you are not sure about your judgment in some lines, you can skip them. <br /></li>
 		      <li>We have provided you an example annotation to help you better understand the task.</li>
@@ -73,11 +73,21 @@ class parentDoc:
       		for sentenceIndex in range(len(self.m_sentenceList)):
       			sentenceMap = self.m_sentenceList[sentenceIndex]
 
-      			if sentenceIndex == selectedStnIndex:
-				message += """<b><font size="2.5" color="green">["""+str(sentenceIndex)+"""] </font></b><font color="green" size="2.5" face="times">"""+sentenceMap["sentence"]+"""</font><br />"""
+      			if sentenceIndex in childObj.m_sentenceList:
+				message += """<b><font color="green">["""+str(sentenceIndex)+"""] </font></b><font color="green" size="2.5" face="times">"""+sentenceMap["sentence"]+"""</font><br />"""
 			else:
-				message += """<font color="blue" size="2.5">["""+str(sentenceIndex)+"""]</font><font size="2.5" face="times">"""+sentenceMap["sentence"]+"""</font><br />"""
+				message += """<font color="blue">["""+str(sentenceIndex)+"""] </font><font size="2.5" face="times">"""+sentenceMap["sentence"]+"""</font><br />"""
       		message += "</p>"
+
+      		message +="<hr />"
+
+      		message += """<h3><font color="red">Step 2: please read the comment</font></h3>"""
+	    	message += "<h2>Comments:</h2>"
+	    	message += """<p><font size="2.5" face="times">"""
+	    	message += childObj.m_content
+				# childObj = self.m_childMap[childName]
+	    	message += """</font></p>"""
+
       		return message
 
 	def transformChildTxt2Question(self, childObj):
@@ -299,93 +309,116 @@ class corpus:
 
 			###add tranformation for child
 	
-	def transformQuestionText(self, childName, sentenceIndex):
-		message = """<h3><font color="red">Step 3: please provide the relevance score of the comment with respect to each selected line</font></h3> Relevance to the<b><font color="green"> line"""+str(sentenceIndex)+"""</font></b>"""
+	def transformQuestionText(self, childName, sentenceIndex, stepIndex):
+		message = """<h3><font color="red">Step """+str(stepIndex)+""": please provide the relevance score of the comment with respect to each selected line</font></h3> Relevance to the<b><font color="green"> line"""+str(sentenceIndex)+"""</font></b>"""
 		return message
 
-	def writeQuestion(self, outputQuestionFile, selectedParentNum, selectedCommentNum):
+	def writeQuestion(self, outputQuestionDir, selectedParentNum, selectedCommentNum, thresholdNum):
 
 		randomParentIndexList = random.sample(range(0, len(self.m_parentObjectCollection)), selectedParentNum)
 
-		f = open(outputQuestionFile, "w")
-		f.write("""<?xml version="1.0" encoding="UTF-8"?>""")
-		f.write("\n")
-		f.write("""<QuestionForm xmlns="http://mechanicalturk.amazonaws.com/AWSMechanicalTurkDataSchemas/2005-10-01/QuestionForm.xsd">""")
-
 
 		questionID = ""
+		questionNum = 0
+		pageNum = 0
+		articleNum = 0
 		for parentIndex in randomParentIndexList:
+		
 			obj = self.m_parentObjectCollection[parentIndex]
-
 			if len(obj.m_mergedChildList) < selectedCommentNum:
 				print "parentName ", obj.m_name, " with comments fewer than\t", selectedCommentNum
 				continue 
 
+
+			articleNum += 1
 			randomChildIndexList = random.sample(range(0, len(obj.m_mergedChildList)), selectedCommentNum)
 
 			for childIndex in randomChildIndexList:
 				childName = obj.m_mergedChildList[childIndex]
 				childObj = obj.m_childMap[childName]
 
-				for sentenceIndex in childObj.m_sentenceList:
-					questionID = childName+"_"+str(sentenceIndex)
-					print questionID
+				iterationNum = len(childObj.m_sentenceList)/thresholdNum
+				for iterationIndex in range(iterationNum+1):
+					stepIndex = 3
+					pageNum += 1
+					questionFileName = obj.m_name+"_"+str(childIndex)
+					if(iterationIndex>0):
+						questionFileName = obj.m_name+"_"+str(childIndex)+"_"+str(iterationIndex)
+				
+					outputQuestionFile = os.path.join(outputQuestionDir,"%s.question"%questionFileName)
+					f = open(outputQuestionFile, "w")
+					f.write("""<?xml version="1.0" encoding="UTF-8"?>""")
+					f.write("\n")
+					f.write("""<QuestionForm xmlns="http://mechanicalturk.amazonaws.com/AWSMechanicalTurkDataSchemas/2005-10-01/QuestionForm.xsd">""")
+				
 					f.write("""<Overview>""")
 					f.write("\n")
 					f.write("""<FormattedContent><![CDATA[""")
-					article = obj.transformParentTxt2Question(childObj, sentenceIndex)
-					f.write(article)
+					articleAndComment = obj.transformParentTxt2Question(childObj)
+					f.write(articleAndComment)
 					f.write("""]]></FormattedContent>""")
-					f.write("""</Overview><Question>
-		  <QuestionIdentifier>""")
-					f.write(questionID)
-					f.write("""</QuestionIdentifier>""")
-					f.write("""
-					<QuestionContent>
-		     <FormattedContent><![CDATA[""")
-					questionDescription = obj.transformChildTxt2Question(childObj)
-					f.write(questionDescription)
-	      # <h5><font color="red">**********please read the comment************</font></h5>
-	      # <h2>Comments:</h2>
-	      # <p>RUSSIA &amp; THE WEST LOOKS FOR A "SAVE SYRIA" DEAL IN DAMASCUS BUT PERHAPS THEY SHOULD LOOK TO LATAKIA.  This could be a great benefit for Alawites andrebels but not so good for militant jihadis on one side and hard-line war criminals on the other side since the goals of both depend on a prolonged war.The jihadi numbers and influence grows with each extra day this war lasts and with every bomb and shelling Assad launches.  That's not good for Alawites or moderate rebels.   The other beneficiaries are Assad, Maher and Malouf  who could have prevented this entire conflict by agreeing to demands for democracy and human rights when it all bega.  They've promoted the "Rebels are all Al Queda line" so they get to stay alive and free for a few days or months longer at the expense of everyone else.For details on Latakia developments see the today's Syria Live roundup at Enduring America. In this instance most of the good stuff has been provided by readers in subposts since the moderators have other duties today.   One regular poster has actually been in Darayaa recently and witnessed a major defection.   Today's defection of three top regime officials--described in another post--could encourage the deal as well as other defections.You'll also learn of interesting and ongoing military developments, which keep getting updated.   Thanks, Red TornadoesSyrians need to do whatever they need to in order to stay free of the Zionist-Wahabi-salafist-Al-Qaida death squads. We may be in the same situation here in the US with Israeli agents creating terrorist attacks like 9/11.</p>
-	      # <h5><font color="red">******Please provide the relevance score of the comment with respect to each selected line******</font></h5>
-					f.write("""]]></FormattedContent>""")
-		      # <Text>Relevance to the line 3</Text>
-					questionText = self.transformQuestionText(childName, sentenceIndex)
-					f.write(questionText)
-		    			f.write("""</QuestionContent>
-					    <AnswerSpecification>
-					      <SelectionAnswer>
-					        <MinSelectionCount>1</MinSelectionCount>
-					        <MaxSelectionCount>1</MaxSelectionCount>
-					        <StyleSuggestion>radiobutton</StyleSuggestion>
-					        <Selections>
-					          <Selection>
-					            <SelectionIdentifier>0</SelectionIdentifier>
-					            <Text>Bad</Text>
-					          </Selection>
-					          <Selection>
-					            <SelectionIdentifier>1</SelectionIdentifier>
-					            <Text>Fair</Text>
-					          </Selection>
-					           <Selection>
-					            <SelectionIdentifier>2</SelectionIdentifier>
-					            <Text>Good</Text>
-					          </Selection>
-					           <Selection>
-					            <SelectionIdentifier>3</SelectionIdentifier>
-					            <Text>Excellent</Text>
-					          </Selection>
-							      <Selection>
-					            <SelectionIdentifier>4</SelectionIdentifier>
-					            <Text>Perfect</Text>
-					          </Selection>
-					        </Selections>
-					      </SelectionAnswer>
-					    </AnswerSpecification>
-		  				</Question>""")
+					f.write("""</Overview>""")
 
-		f.write("""</QuestionForm>""")
+					for sentenceIndex in childObj.m_sentenceList[iterationIndex*thresholdNum:(iterationIndex+1)*thresholdNum]:
+						questionID = childName+"_"+str(sentenceIndex)
+						print questionID
+
+						questionNum += 1
+						
+						f.write("""<Question>
+			  			<QuestionIdentifier>""")
+						f.write(questionID)
+						f.write("""</QuestionIdentifier>""")
+						f.write("""
+						<QuestionContent>
+			     <FormattedContent><![CDATA[""")
+						# questionDescription = obj.transformChildTxt2Question(childObj)
+						# f.write(questionDescription)
+		      # <h5><font color="red">**********please read the comment************</font></h5>
+		      # <h2>Comments:</h2>
+		      # <p>RUSSIA &amp; THE WEST LOOKS FOR A "SAVE SYRIA" DEAL IN DAMASCUS BUT PERHAPS THEY SHOULD LOOK TO LATAKIA.  This could be a great benefit for Alawites andrebels but not so good for militant jihadis on one side and hard-line war criminals on the other side since the goals of both depend on a prolonged war.The jihadi numbers and influence grows with each extra day this war lasts and with every bomb and shelling Assad launches.  That's not good for Alawites or moderate rebels.   The other beneficiaries are Assad, Maher and Malouf  who could have prevented this entire conflict by agreeing to demands for democracy and human rights when it all bega.  They've promoted the "Rebels are all Al Queda line" so they get to stay alive and free for a few days or months longer at the expense of everyone else.For details on Latakia developments see the today's Syria Live roundup at Enduring America. In this instance most of the good stuff has been provided by readers in subposts since the moderators have other duties today.   One regular poster has actually been in Darayaa recently and witnessed a major defection.   Today's defection of three top regime officials--described in another post--could encourage the deal as well as other defections.You'll also learn of interesting and ongoing military developments, which keep getting updated.   Thanks, Red TornadoesSyrians need to do whatever they need to in order to stay free of the Zionist-Wahabi-salafist-Al-Qaida death squads. We may be in the same situation here in the US with Israeli agents creating terrorist attacks like 9/11.</p>
+		      # <h5><font color="red">******Please provide the relevance score of the comment with respect to each selected line******</font></h5>
+						
+			      # <Text>Relevance to the line 3</Text>
+						questionText = self.transformQuestionText(childName, sentenceIndex, stepIndex)
+						stepIndex += 1
+						f.write(questionText)
+						f.write("""]]></FormattedContent>""")
+			    			f.write("""</QuestionContent>
+						    <AnswerSpecification>
+						      <SelectionAnswer>
+						        <MinSelectionCount>1</MinSelectionCount>
+						        <MaxSelectionCount>1</MaxSelectionCount>
+						        <StyleSuggestion>radiobutton</StyleSuggestion>
+						        <Selections>
+						          <Selection>
+						            <SelectionIdentifier>0</SelectionIdentifier>
+						            <Text>Bad</Text>
+						          </Selection>
+						          <Selection>
+						            <SelectionIdentifier>1</SelectionIdentifier>
+						            <Text>Fair</Text>
+						          </Selection>
+						           <Selection>
+						            <SelectionIdentifier>2</SelectionIdentifier>
+						            <Text>Good</Text>
+						          </Selection>
+						           <Selection>
+						            <SelectionIdentifier>3</SelectionIdentifier>
+						            <Text>Excellent</Text>
+						          </Selection>
+								      <Selection>
+						            <SelectionIdentifier>4</SelectionIdentifier>
+						            <Text>Perfect</Text>
+						          </Selection>
+						        </Selections>
+						      </SelectionAnswer>
+						    </AnswerSpecification>
+			  				</Question>""")
+
+					f.write("""</QuestionForm>""")
+					f.close()
+		print "questionNum\t", questionNum, "pageNum\t", pageNum, "\t articleNum\t", articleNum
 
 	def writeParentJson(self, outputParentDir):
 	
@@ -450,17 +483,23 @@ class corpus:
 if __name__=="__main__":
 	parentDir = "./Data/YahooArticles"
 	childDir = "./Data/YahooComments"
-	outputQuestionFile = "./outputHTML/test.question"		
+	outputQuestionDir = "./outputQuestion/"		
 	
 	YahooNewsCorpus = corpus(parentDir, childDir)
 	YahooNewsCorpus.loadParentDirectory()
 	YahooNewsCorpus.loadChildDirectory()
 
-	selectedParentNum = 1
-	selectedCommentNum  = 1
+	selectedParentNum = 5
+	selectedCommentNum  = 5
+	pageQuestionThresholdNum = 5
 	selectCommentFile = "./Data/mergedCommentFile.txt"
 	YahooNewsCorpus.loadSelectedComment(selectCommentFile)
-	YahooNewsCorpus.writeQuestion(outputQuestionFile, selectedParentNum, selectedCommentNum)
+
+	filelist = [ f for f in os.listdir(outputQuestionDir) if f.endswith(".question") ]
+	for f in filelist:
+		print f
+		os.remove(os.path.join(outputQuestionDir, f))
+	YahooNewsCorpus.writeQuestion(outputQuestionDir, selectedParentNum, selectedCommentNum, pageQuestionThresholdNum)
 	# YahooNewsCorpus.writeJson(outputParentDir, outputChildDir)
 
 
